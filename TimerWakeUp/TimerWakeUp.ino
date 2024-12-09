@@ -1,3 +1,8 @@
+/*
+L.Bosio, S.Corrò
+9/12/2024
+descrizione: modifiche al programma originale Timerwakeup per ridurre il consumo in deep sleep
+*/
 #include "Arduino.h"
 #include "WiFi.h"
 #include <LoRa.h>
@@ -43,6 +48,7 @@ void setup() {
   Serial.println("Boot number: " + String(bootCount));
   print_wakeup_reason();
 
+ //INIZIO: 9/12/2024
   // Mcu.begin();
   LoRa.sleep();
   SPI.end();
@@ -58,6 +64,7 @@ void setup() {
   esp_sleep_pd_config(ESP_PD_DOMAIN_CPU, ESP_PD_OPTION_OFF);
   esp_sleep_pd_config(ESP_PD_DOMAIN_RTC8M, ESP_PD_OPTION_OFF);
   esp_sleep_pd_config(ESP_PD_DOMAIN_VDDSDIO, ESP_PD_OPTION_OFF);
+  //FINE: 9/12/2024
   Serial.println("Going to sleep now");
   Serial.flush();
   esp_deep_sleep_start();
