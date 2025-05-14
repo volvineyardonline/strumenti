@@ -1,0 +1,3 @@
+1- carica il programma del sensore che vuoi testare
+2- collega il sensore i2C
+3- ogni 5 secondi ci sarà un lettura mostrata sul display dell'AB02
