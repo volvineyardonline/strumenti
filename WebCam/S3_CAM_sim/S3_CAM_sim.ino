@@ -14,9 +14,9 @@ HTTPClient http_client;
 
 void mic_init(void);
 void check_sound(void);
-void sd_test(void);
+//void sd_test(void);
 void wifi_scan_connect(void);
-void pcie_test(void);
+//void pcie_test(void);
 void camera_test(void);
 void startCameraServer();
 
@@ -38,9 +38,9 @@ void setup()
         digitalWrite(CAM_IR_PIN, 1 - digitalRead(CAM_IR_PIN)); delay(1000);
     }
 #endif
-    //sd_test();
-    pcie_test();
-    // mic_init();
+    sd_test();
+    //pcie_test();
+     mic_init();
     //wifi_scan_connect();
     delay(2000);
     camera_test();
