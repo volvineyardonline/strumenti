@@ -65,8 +65,9 @@ void loop() {
 
   Serial.println("✅ Immagine acquisita con successo");
 
-  static int photo_id = 0;
-  String path = "/photo" + String(photo_id++) + ".jpg";
+static int photo_id = 0;
+unsigned long timestamp = millis();  // Oppure usa time() se hai NTP attivo
+String path = "/photo_" + String(timestamp) + "_" + String(photo_id++) + ".jpg";
 
   File file = SD.open(path.c_str(), FILE_WRITE);
   if (!file) {
@@ -186,9 +187,9 @@ if (err != ESP_OK) {
 
 s->set_quality(s, 2);
 s->set_brightness(s, 0);
-s->set_contrast(s, 0);
-s->set_saturation(s, 0);
-s->set_sharpness(s, 0);
+s->set_contrast(s, 1);
+s->set_saturation(s, 1);
+s->set_sharpness(s, 1);
 s->set_denoise(s, 5);
 s->set_exposure_ctrl(s, 1);        // abilita esposizione automatica
 s->set_gainceiling(s, GAINCEILING_128X);
@@ -202,6 +203,39 @@ s->set_bpc(s, 1);
 s->set_wpc(s, 1);
   Serial.println("Camera configurata per foto UXGA 1600x1200");
 }
+
+// 📏 Impostazioni di risoluzione e qualità
+// s->set_framesize(s, FRAMESIZE_UXGA);     // Risoluzione (QQVGA a UXGA)
+// s->set_quality(s, 10);                   // Qualità JPEG (0 = alta, 63 = bassa)
+// s->set_contrast(s, 0);                   // Contrasto (-2 a +2)
+// s->set_brightness(s, 0);                 // Luminosità (-2 a +2)
+// s->set_saturation(s, 0);                 // Saturazione colore (-2 a +2)
+// s->set_sharpness(s, 0);                  // Nitidezza (-2 a +2)
+
+// ☀️ Controlli esposizione e guadagno
+// s->set_exposure_ctrl(s, 1);              // Auto-esposizione (1 = ON, 0 = OFF)
+// s->set_aec_value(s, 300);                // Valore esposizione manuale (0–1200)
+// s->set_aec2(s, 1);                       // Auto-esposizione avanzata (1 = ON)
+// s->set_gain_ctrl(s, 1);                  // Auto-gain (1 = ON, 0 = OFF)
+// s->set_agc_gain(s, 15);                  // Gain manuale (0–30)
+// s->set_gainceiling(s, GAINCEILING_32X); // Gain massimo auto (2X a 128X)
+
+// ⚖️ Bilanciamento del bianco
+// s->set_whitebal(s, 1);                   // Bilanciamento bianco automatico (1 = ON)
+// s->set_awb_gain(s, 1);                   // Auto white balance gain (1 = ON)
+// s->set_wb_mode(s, 0);                    // Modalità bianco (0=Auto, 1=Sunny, 2=Cloudy, 3=Office, 4=Home)
+
+// 🧠 Riduzione rumore, correzione lente, pixel difettosi
+// s->set_denoise(s, 5);                    // Riduzione rumore (0–255)
+// s->set_lenc(s, 1);                       // Correzione lente (1 = ON)
+// s->set_bpc(s, 1);                        // Correzione pixel neri difettosi
+// s->set_wpc(s, 1);                        // Correzione pixel bianchi difettosi
+
+// 🔁 Altri controlli
+// s->set_hmirror(s, 0);                   // Ribaltamento orizzontale (specchio)
+// s->set_vflip(s, 1);                     // Ribaltamento verticale
+// s->set_colorbar(s, 0);                  // Mostra pattern di test (1 = ON)
+// s->set_raw_gma(s, 1);                   // Gamma RAW (1 = ON)
 
 
 
