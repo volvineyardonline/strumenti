@@ -1,8 +1,8 @@
 #ifndef __CONFIG_H__
 #define __CONFIG_H__
 
-#define WIFI_SSID        "TIM-23461291"
-#define WIFI_PASSWORD    "whtaZW2SVVtvzyOSlwCzYVys"
+#define WIFI_SSID        ""
+#define WIFI_PASSWORD    ""
 
 #define WIFI_AP_SSID     "T-SIMCAM-"
 #define WIFI_AP_PASSWORD "12345678"

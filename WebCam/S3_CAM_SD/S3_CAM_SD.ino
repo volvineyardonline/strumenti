@@ -49,6 +49,16 @@ void setup() {
 }
 
 void loop() {
+  #ifdef CAM_IR_PIN
+  // Test IR Filter
+  pinMode(CAM_IR_PIN, OUTPUT);
+  Serial.println("Test IR Filter");
+  int i = 3;
+  while (i--) {
+    digitalWrite(CAM_IR_PIN, 1 - digitalRead(CAM_IR_PIN));
+    delay(1000);
+  }
+#endif
   Serial.println("📸 Catturo foto...");
 
   // Richiedi frame dalla camera
@@ -192,7 +202,7 @@ s->set_saturation(s, 1);
 s->set_sharpness(s, 1);
 s->set_denoise(s, 5);
 s->set_exposure_ctrl(s, 1);        // abilita esposizione automatica
-s->set_gainceiling(s, GAINCEILING_128X);
+s->set_gainceiling(s, GAINCEILING_8X);
 s->set_whitebal(s, 1);
 s->set_awb_gain(s, 1);
 s->set_aec2(s, 1);                 // nuova funzione per abilitare AEC
