@@ -30,65 +30,26 @@ void setup() {
   // Attiva alimentazione del modulo (tramite un pin dedicato al power-on)
   pinMode(PWR_ON_PIN, OUTPUT);
   digitalWrite(PWR_ON_PIN, HIGH);
-  delay(1000); // tempo per stabilizzare
+  delay(2000); // tempo per stabilizzare
 
   // Avvia la comunicazione seriale di debug
   Serial.begin(115200);
-  Serial.println("T-SIMCAM self test");
-
-  // -----------------------------
-  // 🔎 TEST FILTRO IR DELLA CAMERA
-  // -----------------------------
-#ifdef CAM_IR_PIN
-  pinMode(CAM_IR_PIN, OUTPUT);
-  Serial.println("Test IR Filter");
-  int i = 3;
-  while (i--) {
-    // Cambia stato ON/OFF del filtro IR (click udibile)
-    digitalWrite(CAM_IR_PIN, 1 - digitalRead(CAM_IR_PIN));
-    delay(1000);
-  }
-#endif
-
-  // -----------------------------
-  // 💾 TEST DELLA SCHEDA SD
-  // -----------------------------
+ 
   sd_test();    
 
-  // -----------------------------
-  // 📸 INIZIALIZZAZIONE CAMERA
-  // -----------------------------
   camera_test();
-
-  // -----------------------------
-  // 🧠 VERIFICA MEMORIA PSRAM
-  // -----------------------------
-  if (psramFound()) {
-    Serial.println("✅ PSRAM presente!");
-  } else {
-    Serial.println("❌ PSRAM NON presente.");
-    Serial.println("Controlla le impostazioni su Tools -> PSRAM: ");
-  }
 }
 
 // =====================
 // 🔁 FUNZIONE LOOP()
 // =====================
-void loop() {
-  // Test periodico del filtro IR (stesso del setup, ma ripetuto)
-#ifdef CAM_IR_PIN
-  pinMode(CAM_IR_PIN, OUTPUT);
-  Serial.println("Test IR Filter");
-  int i = 3;
-  while (i--) {
-    digitalWrite(CAM_IR_PIN, 1 - digitalRead(CAM_IR_PIN));
-    delay(1000);
-  }
-#endif
+#include "esp_camera.h"
+#include "FS.h"
+#include "SD.h"
+#include "SPI.h"
+#include "esp_sleep.h"
 
-  // -----------------------------
-  // 📸 ACQUISIZIONE FOTO
-  // -----------------------------
+void loop() {
   Serial.println("📸 Catturo foto...");
 
   // Richiede un frame (immagine) dalla camera
@@ -100,7 +61,9 @@ void loop() {
   // Se il frame non è stato acquisito -> errore
   if (!fb) {
     Serial.println("❌ Immagine non acquisita");
-    delay(8000); // aspetta e riprova
+    // Vai comunque in deep sleep e riprova al risveglio
+    esp_sleep_enable_timer_wakeup(3600ULL * 1000000ULL); // 1 ora
+    esp_deep_sleep_start();
     return;
   }
 
@@ -127,8 +90,10 @@ void loop() {
   // Rilascia il frame buffer per liberare RAM
   esp_camera_fb_return(fb);
 
-  // Attende 8 secondi prima di catturare la prossima foto
-  delay(8000);
+  // 🔋 Metti ESP32 in deep sleep per 1 ora
+  Serial.println("😴 Vado in deep sleep per 1 ora...");
+  esp_sleep_enable_timer_wakeup(3600ULL * 1000000ULL); // 1 ora
+  esp_deep_sleep_start();
 }
 
 // =====================
