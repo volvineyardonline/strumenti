@@ -61,9 +61,7 @@ void loop() {
   // Se il frame non è stato acquisito -> errore
   if (!fb) {
     Serial.println("❌ Immagine non acquisita");
-    // Vai comunque in deep sleep e riprova al risveglio
-    esp_sleep_enable_timer_wakeup(3600ULL * 1000000ULL); // 1 ora
-    esp_deep_sleep_start();
+    delay(2000); // aspetta un po’ e riprova
     return;
   }
 
@@ -72,9 +70,13 @@ void loop() {
   // -----------------------------
   // 💾 SALVATAGGIO SU SD
   // -----------------------------
-  static int photo_id = 0;                // contatore progressivo foto
-  unsigned long timestamp = millis();     // timestamp in millisecondi
-  String path = "/photo_" + String(timestamp) + "_" + String(photo_id++) + ".jpg";
+  static int photo_id = 0;                    // contatore progressivo foto
+  unsigned long seconds = millis() / 1000;    // tempo in secondi dall’avvio
+  unsigned long minutes = seconds / 60;       // minuti
+  unsigned long sec_only = seconds % 60;      // secondi (da 0 a 59)
+
+  // Nome file tipo: photo_3m45s_2.jpg
+  String path = "/photo_" + String(minutes) + "m" + String(sec_only) + "s_" + String(photo_id++) + ".jpg";
 
   // Apre file sulla SD in modalità scrittura
   File file = SD.open(path.c_str(), FILE_WRITE);
@@ -90,11 +92,10 @@ void loop() {
   // Rilascia il frame buffer per liberare RAM
   esp_camera_fb_return(fb);
 
-  // 🔋 Metti ESP32 in deep sleep per 1 ora
-  Serial.println("😴 Vado in deep sleep per 1 ora...");
-  esp_sleep_enable_timer_wakeup(3600ULL * 1000000ULL); // 1 ora
-  esp_deep_sleep_start();
+  // Attendi un po’ prima dello scatto successivo
+  delay(10000); 
 }
+
 
 // =====================
 // 💾 TEST SCHEDA SD
