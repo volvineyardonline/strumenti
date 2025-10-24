@@ -7,7 +7,7 @@
 #include <WiFi.h>
 #include "time.h"
 
-#define BLOCK_SIZE 512  // dimensione blocco di invio seriale
+#define BLOCK_SIZE 512
 
 // WiFi credentials
 const char* ssid = "TP-Link_3FAE";
@@ -33,7 +33,6 @@ String myTimezone ="WET0WEST,M3.5.0/1,M10.5.0";
 #define VSYNC_GPIO_NUM    25
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
-#define LED_GPIO_NUM       4   // Flash LED — spegnilo se non serve
 
 camera_config_t config;
 String lastPhotoFilename = "";
@@ -61,15 +60,11 @@ void initCamera(){
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
   config.grab_mode = CAMERA_GRAB_LATEST;
-  config.fb_location = CAMERA_FB_IN_PSRAM;
-  config.frame_size = FRAMESIZE_VGA;
-  config.jpeg_quality = 12;
-  config.fb_count = 2;
 
   if(psramFound()){
-    config.frame_size = FRAMESIZE_SVGA; 
-    config.jpeg_quality = 15; 
-    config.fb_count = 2;
+    config.frame_size = FRAMESIZE_VGA;
+    config.jpeg_quality = 15;
+    config.fb_count = 1;
   } else {
     config.frame_size = FRAMESIZE_QVGA;
     config.jpeg_quality = 20;
@@ -77,36 +72,31 @@ void initCamera(){
   }
 
   if(esp_camera_init(&config) != ESP_OK){
-  //  Serial.println("Camera init failed");
-    return;
+    Serial.println("Camera init failed");
+  } else {
+    // Miglioramento colori
+    sensor_t * s = esp_camera_sensor_get();
+    s->set_brightness(s, 0);   // -2 a 2
+    s->set_contrast(s, 1);     // -2 a 2
+    s->set_saturation(s, 1);   // -2 a 2
+    s->set_whitebal(s, 1);     // auto WB
+    s->set_gain_ctrl(s, 1);
+    s->set_hmirror(s, 0);
+    s->set_vflip(s, 0);
+    s->set_lenc(s, 1);         // correzione lente
+    Serial.println("Camera OK");
   }
-
- // Config sensore
-  sensor_t *s = esp_camera_sensor_get();
-  s->set_brightness(s, 0);
-  s->set_contrast(s, 1);
-  s->set_saturation(s, 1);
-  s->set_whitebal(s, 1);
-  s->set_gain_ctrl(s, 1);
-  s->set_exposure_ctrl(s, 1);
-  s->set_hmirror(s, 0);
-  s->set_vflip(s, 0);
-  s->set_lenc(s, 1);
-
-  // Spegni flash
-  pinMode(LED_GPIO_NUM, OUTPUT);
-  digitalWrite(LED_GPIO_NUM, LOW);
 }
 
 // Initialize WiFi
 void initWiFi(){
   WiFi.begin(ssid,password);
-  //Serial.print("Connecting to WiFi");
+  Serial.print("Connecting to WiFi");
   while(WiFi.status() != WL_CONNECTED){
-  //  Serial.print(".");
+    Serial.print(".");
     delay(500);
   }
- // Serial.println("\nConnected");
+  Serial.println("Connected");
 }
 
 // Initialize time
@@ -116,105 +106,77 @@ void initTime(){
   tzset();
 }
 
-String getPhotoFilename() {
+// Generate filename with timestamp
+String getPhotoFilename(){
   struct tm timeinfo;
-  if (!getLocalTime(&timeinfo)) {
-//    Serial.println("Failed to get time");
+  if(!getLocalTime(&timeinfo)){
+    Serial.println("Failed to get time");
     return "/photo.jpg";
   }
-
-  char buffer[50];  // <--- aumentato da 30 a 50 per evitare troncamenti
-  strftime(buffer, sizeof(buffer), "/photo_%Y-%m-%d_%H-%M-%S.jpg", &timeinfo);
-
- // Serial.printf("Filename generated: %s\n", buffer);  // debug utile
+  char buffer[30];
+  strftime(buffer,sizeof(buffer),"/photo_%Y-%m-%d_%H-%M-%S.jpg",&timeinfo);
   return String(buffer);
 }
 
 // Initialize SD
 bool initSD(){
   if(!SD_MMC.begin()){
-  //  Serial.println("SD init failed");
+    Serial.println("SD init failed");
     return false;
   }
   if(SD_MMC.cardType() == CARD_NONE){
-  //  Serial.println("No SD card");
+    Serial.println("No SD card");
     return false;
   }
- // Serial.println("SD initialized");
+  Serial.println("SD initialized");
   return true;
 }
 
 // Take photo and save
-bool takePhoto(){// Warm-up loop to discard first few frames
-for (int i = 0; i < 15; i++) {
-  camera_fb_t *fb = esp_camera_fb_get();
-  if (!fb) continue;
-  esp_camera_fb_return(fb);
-  delay(100); // tempo per stabilizzare AWB/AGC
-}
-
-
-// Here I take the picture I will use:
-camera_fb_t *fb = esp_camera_fb_get();
-delay(1000);
+bool takePhoto(){
+  camera_fb_t * fb = esp_camera_fb_get();
+  if(!fb){
+    Serial.println("Camera capture failed");
+    return false;
+  }
   lastPhotoFilename = getPhotoFilename();
   File file = SD_MMC.open(lastPhotoFilename.c_str(), FILE_WRITE);
   if(!file){
-   // Serial.println("Failed to open file for writing");
+    Serial.println("Failed to open file for writing");
     esp_camera_fb_return(fb);
     return false;
   }
   file.write(fb->buf, fb->len);
   file.close();
   esp_camera_fb_return(fb);
-  //Serial.printf("Saved photo: %s | size: %d bytes\n", lastPhotoFilename.c_str(), fb->len);
+  Serial.printf("Saved photo: %s\n", lastPhotoFilename.c_str());
   return true;
 }
 
-// Send last photo over Serial with progress
-void sendLastPhoto() {
-  if (lastPhotoFilename == "") {
-    Serial.println("ERROR_NO_PHOTO");
+// Send last photo over Serial
+void sendLastPhoto(){
+  if(lastPhotoFilename == ""){
+    Serial.println("No photo available");
     return;
   }
-
   File f = SD_MMC.open(lastPhotoFilename.c_str(), FILE_READ);
-  if (!f) {
+  if(!f){
     Serial.println("ERROR_FILE_NOT_FOUND");
     return;
   }
-
-  size_t fileSize = f.size();
-  // Header con dimensione: il master lo leggerà e poi aspetterà esattamente fileSize byte
-  Serial.printf("START_FILE:%u\n", (unsigned)fileSize);
-  Serial.flush(); // assicurarsi che l'header vada fuori prima dei binari
-  delay(50); // breve pausa per dare tempo al ricevitore di parsare l'header
-
   uint8_t buffer[BLOCK_SIZE];
-  size_t sentBytes = 0;
-
-  while (f.available()) {
+  while(f.available()){
     size_t len = f.read(buffer, BLOCK_SIZE);
-    Serial.write(buffer, len); // invio binario puro, senza println
-    sentBytes += len;
-    // piccola pausa per evitare overflow del buffer UART sull'ESP32
-    delay(2);
+    Serial.write(buffer,len);
+    delay(1);
   }
-
   f.close();
-  Serial.println(); // termina eventuale riga in corso
-  Serial.println("END_FILE");
-  Serial.flush();
-  // se vuoi puoi stampare info di debug *dopo* l'invio
-  //Serial.printf("Total sent: %u bytes\n", (unsigned)fileSize);
+  Serial.println("END_OF_FILE");
 }
-
-
-
 
 void setup(){
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
-  Serial.begin(115200); // baud rate alto per foto grandi
+  Serial.begin(115200);
   delay(2000);
 
   initWiFi();
@@ -222,17 +184,17 @@ void setup(){
   initCamera();
 
   while(!initSD()){
-  //  Serial.println("Retrying SD init in 2s...");
+    Serial.println("Retrying SD init in 2s...");
     delay(2000);
   }
 
   // Take initial photo
   while(!takePhoto()){
-  //  Serial.println("Retrying photo in 2s...");
+    Serial.println("Retrying photo in 2s...");
     delay(2000);
   }
 
-  //Serial.println("Ready to send last photo. Awaiting GET_PHOTO command...");
+  Serial.println("Ready to send last photo. Awaiting GET_PHOTO command...");
 }
 
 void loop(){
