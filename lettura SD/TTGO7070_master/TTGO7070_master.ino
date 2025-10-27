@@ -1,119 +1,136 @@
-#include <WiFi.h>
-#include "SPIFFS.h"
+#include <WiFi.h>       // Libreria per la connessione WiFi
+#include "SPIFFS.h"     // Libreria per gestire il filesystem SPIFFS
 
-#define BLOCK_SIZE 512
+#define BLOCK_SIZE 512  // Dimensione del blocco per leggere/scrivere dati della foto
 
+// Dati WiFi
 const char* ssid = "TP-Link_3FAE";
 const char* password = "63502497";
 
+// Server web sulla porta 80
 WiFiServer server(80);
+
+// Percorso file per salvare l'ultima foto ricevuta
 String latestPhotoPath = "/latest.jpg";
 
-void getPhotoFromSlave() {
-  Serial.println("Invio comando GET_PHOTO allo slave...");
-  Serial.println("GET_PHOTO");  // comando verso lo slave
+// Variabile per gestire il tempo dell'ultimo scatto automatico
+unsigned long lastShotTime = 0;
 
-  // Aspetta la riga START_FILE:<size>\n (timeout generoso)
+// Funzione per richiedere la foto allo slave
+void getPhotoFromSlave() {
+  Serial.println("Invio comando SCATTA allo slave...");
+  Serial.println("SCATTA");  // Invio comando SCATTA via seriale
+
+  // Attesa del segnale "INVIO" dallo slave
   unsigned long start = millis();
+  String line = "";
+  while (millis() - start < 5000) {  // timeout 5 secondi
+    if (Serial.available()) {
+      line = Serial.readStringUntil('\n');  // legge una riga dalla seriale
+      line.trim();                          // rimuove spazi iniziali/finali
+      if (line == "INVIO") break;           // esce se ricevuto INVIO
+    }
+    delay(2);
+  }
+
+  // Controlla se INVIO è stato ricevuto
+  if (line != "INVIO") {
+    Serial.println("Errore: INVIO non ricevuto");
+    return; // termina funzione
+  }
+
+  Serial.println("INVIO ricevuto, inizio ricezione foto...");
+
+  // Attende l'header START_FILE:<size> dalla seriale
+  start = millis();
   String header = "";
-  while (millis() - start < 10000) {  // 10s di timeout per il header
+  while (millis() - start < 10000) {  // timeout 10 secondi
     if (Serial.available()) {
       header = Serial.readStringUntil('\n');
       header.trim();
-      if (header.length() > 0) break;
-    } else {
-      delay(2);
+      if (header.startsWith("START_FILE:")) break;
     }
+    delay(2);
   }
 
+  // Controlla se header valido
   if (!header.startsWith("START_FILE:")) {
     Serial.printf("Errore: header non ricevuto o non valido: '%s'\n", header.c_str());
     return;
   }
 
+  // Ottiene la dimensione della foto
   size_t fileSize = (size_t)header.substring(11).toInt();
   if (fileSize == 0) {
     Serial.println("Errore: fileSize = 0");
     return;
   }
-  Serial.printf("Inizio ricezione, dimensione attesa: %u bytes\n", (unsigned)fileSize);
+  Serial.printf("Dimensione attesa: %u bytes\n", (unsigned)fileSize);
 
+  // Apre il file su SPIFFS per scrivere la foto
   File f = SPIFFS.open(latestPhotoPath, FILE_WRITE);
   if (!f) {
     Serial.println("Errore apertura file su SPIFFS");
     return;
   }
 
-  uint8_t buffer[BLOCK_SIZE];
+  uint8_t buffer[BLOCK_SIZE];  // buffer per ricevere blocchi di dati
   size_t received = 0;
   unsigned long lastDataTime = millis();
 
+  // Ciclo per ricevere la foto in blocchi
   while (received < fileSize) {
-    // Se ci sono dati disponibili, leggili (solo la quantità utile)
     if (Serial.available()) {
       size_t avail = Serial.available();
-      size_t toRead = min((size_t)avail, min((size_t)BLOCK_SIZE, fileSize - received));
-      size_t len = Serial.readBytes(buffer, toRead);  // non blocca perchè toRead <= avail
+      // calcola quanti byte leggere (min tra buffer, bytes disponibili e rimanenti)
+      size_t toRead = min((size_t)avail, min((size_t)BLOCK_SIZE, (size_t)(fileSize - received)));
+      size_t len = Serial.readBytes(buffer, toRead);
       if (len > 0) {
-        f.write(buffer, len);
-        received += len;
-        lastDataTime = millis();
-        // stampa progress occasionalmente
-        static size_t lastPct = 0;
-        size_t pct = (received * 100) / fileSize;
-        if (pct >= lastPct + 5) {
-          Serial.printf("Ricevuto ~%d%% (%u bytes)\n", (int)pct, (unsigned)received);
-          lastPct = pct;
-        }
+        f.write(buffer, len);       // scrive nel file
+        received += len;            // aggiorna contatore bytes ricevuti
+        lastDataTime = millis();    // aggiorna timer per timeout
       }
     } else {
-      // timeout di inattività (es. slave fermo)
-      if (millis() - lastDataTime > 15000) {  // 15s
-        Serial.println("Timeout di ricezione: nessun dato ricevuto per 15s");
+      // Se non arrivano dati per 15 secondi esce
+      if (millis() - lastDataTime > 15000) {
+        Serial.println("Timeout: nessun dato ricevuto");
         break;
       }
       delay(2);
     }
   }
 
-  f.close();
+  f.close(); // chiude il file
 
-  if (received < fileSize) {
-    Serial.printf("Attenzione: trasferimento incompleto: ricevuti %u / %u bytes\n", (unsigned)received, (unsigned)fileSize);
-    // prova a pulire il buffer e leggere eventuale END_FILE
+  // Attende "FINE" dallo slave per confermare la fine della trasmissione
+  start = millis();
+  line = "";
+  while (millis() - start < 5000) {
     if (Serial.available()) {
-      String rest = Serial.readString();
-      Serial.printf("Rimanenti nel buffer: %u bytes (visualizzazione come stringa): %s\n", rest.length(), rest.c_str());
+      line = Serial.readStringUntil('\n');
+      line.trim();
+      if (line == "FINE") break;
     }
-    return;
+    delay(2);
   }
 
-  // Legge la riga END_FILE (dovrebbe essere sul flusso dopo i fileSize byte)
-  unsigned long t0 = millis();
-  String endLine = "";
-  while (millis() - t0 < 5000) {  // 5s di attesa per l'END_FILE
-    if (Serial.available()) {
-      endLine = Serial.readStringUntil('\n');
-      endLine.trim();
-      if (endLine.length() > 0) break;
-    } else {
-      delay(2);
-    }
-  }
-  if (endLine != "END_FILE") {
-    Serial.printf("Attenzione: fine file non riconosciuta correttamente: '%s'\n", endLine.c_str());
+  if (line != "FINE") {
+    Serial.println("Attenzione: FINE non ricevuto correttamente");
   } else {
-    Serial.println("Ricezione completata correttamente (END_FILE).");
+    Serial.println("Ricezione completata correttamente (FINE).");
   }
-
-  Serial.printf("Ricezione terminata. Totale: %u bytes\n", (unsigned)received);
 }
 
+// Funzione per gestire le richieste HTTP
 void handleClient() {
   WiFiClient client = server.available();
   if (!client) return;
+
+  // legge la richiesta fino a \r
   String request = client.readStringUntil('\r');
-  client.flush();  // Mostra l’ultima foto scattata
+  client.flush();
+
+  // Pagina principale
   if (request.indexOf("GET / ") >= 0 || request.indexOf("GET /index") >= 0) {
     client.println("HTTP/1.1 200 OK");
     client.println("Content-Type: text/html");
@@ -124,7 +141,9 @@ void handleClient() {
     client.println("<img src='/photo.jpg' width='640'><br>");
     client.println("<a href='/photo.jpg'>Scarica foto</a>");
     client.println("</body></html>");
-  } else if (request.indexOf("GET /photo.jpg") >= 0) {
+  }
+  // Richiesta diretta della foto
+  else if (request.indexOf("GET /photo.jpg") >= 0) {
     File f = SPIFFS.open(latestPhotoPath, FILE_READ);
     if (!f) {
       client.println("HTTP/1.1 404 Not Found");
@@ -142,32 +161,26 @@ void handleClient() {
     client.println("Connection: close");
     client.println();
     uint8_t buffer[BLOCK_SIZE];
-    size_t sent = 0;
     while (f.available()) {
       size_t len = f.read(buffer, BLOCK_SIZE);
-      client.write(buffer, len);
-      sent += len;
-      size_t percent = (sent * 100) / fileSize;
-      static size_t lastPercent = 0;
-      if (percent >= lastPercent + 10) {
-        Serial.printf("Invio HTTP %d%%\n", percent);
-        lastPercent = percent;
-      }
+      client.write(buffer, len); // invia dati foto
     }
     f.close();
-    Serial.printf("Trasferimento HTTP completato: %d bytes inviati.\n", fileSize);
   }
-  client.stop();
+
+  client.stop(); // chiude connessione client
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(115200); // inizializza seriale
   delay(2000);
+
   if (!SPIFFS.begin(true)) {
-    Serial.println("Errore inizializzazione SPIFFS");
+    Serial.println("Errore inizializzazione SPIFFS"); // inizializza filesystem
   }
+
+  // connessione WiFi
   WiFi.begin(ssid, password);
-  Serial.println("Connessione WiFi...");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
@@ -176,13 +189,19 @@ void setup() {
   Serial.print("IP locale: ");
   Serial.println(WiFi.localIP());
 
-  delay(5000);
-  getPhotoFromSlave();
+  delay(2000);
 
-  server.begin();
-  Serial.println("Server web avviato.");
+  getPhotoFromSlave(); // Richiede la prima foto appena accesa
+
+  server.begin(); // avvia il server web
 }
 
 void loop() {
-  handleClient();
+  handleClient(); // gestisce eventuali richieste web
+
+  // SCATTA automatico ogni 40 secondi
+  if (millis() - lastShotTime >= 40000) {
+    lastShotTime = millis();
+    getPhotoFromSlave();
+  }
 }
