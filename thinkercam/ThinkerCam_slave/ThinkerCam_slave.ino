@@ -200,21 +200,37 @@ void sendLastPhoto() {
     return;
   }
 
-  size_t fileSize = f.size();           // Calcola dimensione immagine
-  Serial.printf("START_FILE:%u\n", (unsigned)fileSize);  // Intestazione al master
+  size_t fileSize = f.size();
+  Serial.printf("START_FILE:%u\n", (unsigned)fileSize);
   Serial.flush();
-  delay(50);
+  delay(1000);
 
   uint8_t buffer[BLOCK_SIZE];
+  size_t sent = 0;
+  unsigned long lastYield = millis();
 
-  while (f.available()) {               // Finché ci sono dati
-    size_t len = f.read(buffer, BLOCK_SIZE); // Leggi blocco
-    Serial.write(buffer, len);          // Invia blocco via seriale
-    delay(2);
+  while (sent < fileSize) {
+
+    size_t toRead = min((size_t)BLOCK_SIZE, (size_t)(fileSize - sent));
+    size_t len = f.read(buffer, toRead);
+
+    if (len == 0) break;
+
+    size_t written = Serial.write(buffer, len);
+    sent += written;
+
+    // 🔴 CONTROLLO FLUSSO FONDAMENTALE
+    if (millis() - lastYield > 20) {
+      Serial.flush();     // svuota buffer TX
+      delay(2);           // respiro CPU
+      lastYield = millis();
+    }
   }
 
   f.close();
-  Serial.flush();
+
+  Serial.flush();         // assicura che TUTTO sia uscito
+  delay(50);
 }
 
 
@@ -253,7 +269,8 @@ void loop(){
         Serial.println("INVIO");
         Serial.flush();
         sendLastPhoto();               // Invia immagine
-        Serial.println("FINE");        // Segnale fine invio
+        Serial.println("FINE");
+        Serial.flush();        // Segnale fine invio
       }
       else {
         Serial.println("ERRORE_SCATTO");
